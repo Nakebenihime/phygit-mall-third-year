@@ -1,0 +1,439 @@
+stages:
+  - package-back-end
+  - build-back-end
+  - deploy-back-end
+  - build
+  - test
+  - release
+  - deploy
+  - build-sensor
+  - test-sensor
+  - release-sensor
+  - deploy-sensor
+  - python-test
+  - python-build
+  - python-deploy
+
+variables:
+    MAVEN_OPTS: "-Dhttps.protocols=TLSv1.2 -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN -Dorg.slf4j.simpleLogger.showDateTime=true -Djava.awt.headless=true"
+    MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version -DinstallAtEnd=true -DdeployAtEnd=true"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+
+python-test:
+  stage: python-test
+  image: python:3.7
+  only:
+    changes:
+      - recognition/**/*
+  before_script:
+    - "pip install -r recognition/application/requirements.txt"
+    - "cd recognition/application"
+  script:
+    - "python manage.py makemigrations"
+    - "python manage.py migrate"
+    - "python manage.py test api.tests.recognition_tests"
+
+docker-build-python:
+  stage: python-build
+  image: docker:19-dind
+  services:
+    - name: docker:19-dind
+      command: ["--insecure-registry=gitlab.pds:5005"]
+  only:
+    changes:
+      - recognition/**/*
+  script:
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - docker build -t ${CI_REGISTRY}/root/dilemma/recognition ./recognition
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/recognition
+  after_script:
+    - docker logout ${CI_REGISTRY}
+
+ssh-integration-python:
+  stage: python-deploy
+  image: kroniak/ssh-client
+  environment:
+    name: integration
+    url: http://${SSH_REMOTE_HOST}
+  only:
+    refs:
+      - branches
+    changes:
+      - recognition/**/*
+  except:
+    refs:
+      - master
+  before_script:
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -t rsa ${SSH_REMOTE_HOST} >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - ssh deployer@${SSH_REMOTE_HOST} "docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/recognition"
+    - ssh deployer@${SSH_REMOTE_HOST} 'docker stop dilemma-recognition' || true
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8585:8000 -p 8554:8554 -p 8554:8554/udp --name dilemma-recognition ${CI_REGISTRY}/${CI_PROJECT_PATH}/recognition"
+
+ssh-qualification-python:
+  stage: python-deploy
+  image: kroniak/ssh-client
+  environment:
+    name: qualification
+    url: http://${SSH_REMOTE_HOST}
+  only:
+    refs:
+      - master
+    changes:
+      - recognition/**/*
+  before_script:
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -t rsa ${SSH_REMOTE_HOST} >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - ssh deployer@${SSH_REMOTE_HOST} "docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/recognition"
+    - ssh deployer@${SSH_REMOTE_HOST} 'docker stop dilemma-recognition' || true
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8585:8000 -p 8554:8554 -p 8554:8554/udp --name dilemma-recognition ${CI_REGISTRY}/${CI_PROJECT_PATH}/recognition"
+    
+maven-build:
+  stage: package-back-end
+  image: maven:3.6.2-jdk-11
+  only:
+    changes:
+      - dilemma-rest-api/**/*
+  script: "mvn package -B -f ./dilemma-rest-api/pom.xml"
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - ${CI_PROJECT_SUBFOLDER_PATH}/dilemma-consumer/target/*.jar
+      - ${CI_PROJECT_SUBFOLDER_PATH}/dilemma-geolocation/target/*.jar
+      - ${CI_PROJECT_SUBFOLDER_PATH}/dilemma-journey/target/*.jar
+      - ${CI_PROJECT_SUBFOLDER_PATH}/dilemma-subscriber/target/*.jar
+      - ${CI_PROJECT_SUBFOLDER_PATH}/dilemma-frequentation/target/*.jar
+      - ${CI_PROJECT_SUBFOLDER_PATH}/swagger-aggregator/target/*.jar
+      - ${CI_PROJECT_SUBFOLDER_PATH}/authentication/target/*.jar
+
+docker-deploy:
+  stage: build-back-end
+  image: docker:19-dind
+  services:
+    - name: docker:19-dind
+      command: ["--insecure-registry=gitlab.pds:5005"]
+  only:
+    changes:
+      - dilemma-rest-api/**/*
+  script:
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-consumer ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-consumer
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-geolocation ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-geolocation
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-journey ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-journey
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-subscriber ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-subscriber
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-aggregator ./${CI_PROJECT_SUBFOLDER_PATH}/swagger-aggregator
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-authentication ./${CI_PROJECT_SUBFOLDER_PATH}/authentication
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-frequentation ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-frequentation
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-consumer
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-geolocation
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-journey
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-subscriber
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-aggregator
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-authentication
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-frequentation
+  after_script:
+    - docker logout ${CI_REGISTRY}
+
+docker-deploy:
+  stage: build-back-end
+  image: docker:19-dind
+  services:
+    - name: docker:19-dind
+      command: ["--insecure-registry=gitlab.pds:5005"]
+  only:
+    changes:
+      - dilemma-rest-api/**/*
+  script:
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-consumer ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-consumer
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-geolocation ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-geolocation
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-journey ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-journey
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-subscriber ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-subscriber
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-aggregator ./${CI_PROJECT_SUBFOLDER_PATH}/swagger-aggregator
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-authentication ./${CI_PROJECT_SUBFOLDER_PATH}/authentication
+    - docker build -t ${CI_REGISTRY}/${CI_ROOT_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-frequentation ./${CI_PROJECT_SUBFOLDER_PATH}/dilemma-frequentation
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-consumer
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-geolocation
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-journey
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-subscriber
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-aggregator
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-authentication
+    - docker push ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-frequentation
+  after_script:
+    - docker logout ${CI_REGISTRY}
+
+ssh-deploy-integration:
+  stage: deploy-back-end
+  image: kroniak/ssh-client
+  environment:
+    name: integration
+    url: http://${SSH_REMOTE_HOST}
+  only:
+    refs:
+      - branches
+    changes:
+      - dilemma-rest-api/**/*
+  except:
+    refs:
+      - master
+  before_script:
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -t rsa ${SSH_REMOTE_HOST} >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - ssh deployer@${SSH_REMOTE_HOST} "docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-consumer"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-geolocation"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-journey"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-subscriber"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-aggregator"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-frequentation"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-authentication"
+    - ssh deployer@${SSH_REMOTE_HOST} 'docker stop $(docker ps -aq)' || true
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8383:8383 --name dilemma-rest-api-subscriber ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-subscriber"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8282:8282 --name dilemma-rest-api-consumer ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-consumer"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8080:8080 --name dilemma-rest-api-geolocation ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-geolocation"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8181:8181 --name dilemma-rest-api-journey ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-journey"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8484:8484 --name dilemma-rest-api-authentication ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-authentication"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8686:8686 --name dilemma-rest-api-frequentation ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-frequentation"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8888:8888 --name dilemma-rest-api-aggregator ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-aggregator"
+
+ssh-deploy-qualification:
+  stage: deploy-back-end
+  image: kroniak/ssh-client
+  environment:
+    name: qualification
+    url: http://${SSH_REMOTE_HOST}
+  only:
+    refs:
+      - master
+    changes:
+      - dilemma-rest-api/**/*
+  before_script:
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -t rsa ${SSH_REMOTE_HOST} >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - ssh deployer@${SSH_REMOTE_HOST} "docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-consumer"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-geolocation"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-journey"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-subscriber"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-frequentation"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-aggregator"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker pull ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-authentication"
+    - ssh deployer@${SSH_REMOTE_HOST} 'docker stop $(docker ps -aq)' || true
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8383:8383 --name dilemma-rest-api-subscriber ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-subscriber"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8282:8282 --name dilemma-rest-api-consumer ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-consumer"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8080:8080 --name dilemma-rest-api-geolocation ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-geolocation"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8181:8181 --name dilemma-rest-api-journey ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-journey"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8484:8484 --name dilemma-rest-api-authentication ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-authentication"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8686:8686 --name dilemma-rest-api-frequentation ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-frequentation"
+    - ssh deployer@${SSH_REMOTE_HOST} "docker run  --rm -d -p 8888:8888 --name dilemma-rest-api-aggregator ${CI_REGISTRY}/${CI_PROJECT_PATH}/${CI_PROJECT_SUBFOLDER_PATH}-aggregator"
+
+.android-build: &build
+  stage: build
+  image: jangrewe/gitlab-ci-android
+  only:
+    changes:
+      - dilemma-mobile/**/*
+  before_script:
+    - cd dilemma-mobile/
+    - export GRADLE_USER_HOME=$(pwd)/.gradle
+    - chmod +x ./gradlew
+
+build:lintDebug:
+  <<: *build
+  image: jangrewe/gitlab-ci-android
+  script:
+    - ./gradlew -Pci --console=plain :app:lintDebug -PbuildDir=lint
+
+build:assembleDebug:
+  <<: *build
+  image: jangrewe/gitlab-ci-android
+  script:
+    - ./gradlew assembleDebug
+  artifacts:
+    expire_in: 30 mins 00 sec
+    paths:
+      - dilemma-mobile/app/build/outputs/
+
+.android-test: &test
+  stage: test
+  image: jangrewe/gitlab-ci-android
+  only:
+    changes:
+      - dilemma-mobile/**/*
+  before_script:
+    - cd dilemma-mobile/
+    - export GRADLE_USER_HOME=$(pwd)/.gradle
+    - chmod +x ./gradlew
+
+test:debugTests:
+  <<: *test
+  script:
+    - ./gradlew -Pci --console=plain :app:testDebug
+
+.android-release: &release
+  stage: release
+  image: jangrewe/gitlab-ci-android
+  only:
+    changes:
+      - dilemma-mobile/**/*
+  before_script:
+    - cd dilemma-mobile/
+    - export GRADLE_USER_HOME=$(pwd)/.gradle
+    - chmod +x ./gradlew
+
+release:assembleRelease:
+  <<: *release
+  script:
+    - echo $KEYSTORE_FILE | base64 -d > my.keystore
+    - ./gradlew assembleRelease
+      -Pandroid.injected.signing.store.file=$(pwd)/my.keystore
+      -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD
+      -Pandroid.injected.signing.key.alias=$KEY_ALIAS
+      -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+  artifacts:
+    paths:
+      - dilemma-mobile/app/build/outputs/apk/release
+      - CHANGELOG
+    expire_in: 30 mins 00 sec
+
+.android-deploy: &deploy
+  stage: deploy
+  image: python:3.5.2
+  only:
+    changes:
+      - dilemma-mobile/**/*
+deploy:deployRelease:
+  <<: *deploy
+  script:
+    - pip install requests
+    - git clone https://github.com/mega-arbuz/apk-release-deploy.git
+    - python apk-release-deploy/deploy.py
+      --release.dir=dilemma-mobile/app/build/outputs/apk/release
+      --app.name=dilemma-mobile
+      --dropbox.token=$DROPBOX_TOKEN
+      --dropbox.folder=release
+      --changelog.file=dilemma-mobile/CHANGELOG
+      --template.file=dilemma-mobile/TEMPLATE
+      --zapier.hook=$ZAPIER_EMAIL_HOOK
+      --email.to=$EMAIL_TARGET
+  cache: {}
+  needs: ["release:assembleRelease"]
+
+.android-sensor-build: &build-sensor
+  stage: build-sensor
+  image: jangrewe/gitlab-ci-android
+  only:
+    changes:
+      - beacon-sensor/**/*
+  before_script:
+    - cd beacon-sensor/
+    - export GRADLE_USER_HOME=$(pwd)/.gradle
+    - chmod +x ./gradlew
+
+build-sensor:lintDebug:
+  <<: *build-sensor
+  image: jangrewe/gitlab-ci-android
+  script:
+    - ./gradlew -Pci --console=plain :app:lintDebug -PbuildDir=lint
+
+build-sensor:assembleDebug:
+  <<: *build-sensor
+  image: jangrewe/gitlab-ci-android
+  script:
+    - ./gradlew assembleDebug
+  artifacts:
+    expire_in: 30 mins 00 sec
+    paths:
+      - beacon-sensor/app/build/outputs/
+
+.android-sensor-test: &test-sensor
+  stage: test-sensor
+  image: jangrewe/gitlab-ci-android
+  only:
+    changes:
+      - beacon-sensor/**/*
+  before_script:
+    - cd beacon-sensor/
+    - export GRADLE_USER_HOME=$(pwd)/.gradle
+    - chmod +x ./gradlew
+
+test-sensor:debugTests:
+  <<: *test-sensor
+  script:
+    - ./gradlew -Pci --console=plain :app:testDebug
+
+.android-sensor-release: &release-sensor
+  stage: release-sensor
+  image: jangrewe/gitlab-ci-android
+  only:
+    changes:
+      - beacon-sensor/**/*
+  before_script:
+    - cd beacon-sensor/
+    - export GRADLE_USER_HOME=$(pwd)/.gradle
+    - chmod +x ./gradlew
+
+release-sensor:assembleRelease:
+  <<: *release-sensor
+  script:
+    - echo $KEYSTORE_FILE | base64 -d > my.keystore
+    - ./gradlew assembleRelease
+      -Pandroid.injected.signing.store.file=$(pwd)/my.keystore
+      -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD
+      -Pandroid.injected.signing.key.alias=$KEY_ALIAS
+      -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+  artifacts:
+    paths:
+      - beacon-sensor/app/build/outputs/apk/release
+      - CHANGELOG
+    expire_in: 30 mins 00 sec
+
+.android-sensor-deploy: &deploy-sensor
+  stage: deploy-sensor
+  image: python:3.5.2
+  only:
+    changes:
+      - beacon-sensor/**/*
+deploy-sensor:deployRelease:
+  <<: *deploy-sensor
+  script:
+    - pip install requests
+    - git clone https://github.com/mega-arbuz/apk-release-deploy.git
+    - python apk-release-deploy/deploy.py
+      --release.dir=beacon-sensor/app/build/outputs/apk/release
+      --app.name=beacon-sensor
+      --dropbox.token=$DROPBOX_TOKEN
+      --dropbox.folder=release
+      --changelog.file=beacon-sensor/CHANGELOG
+      --template.file=beacon-sensor/TEMPLATE
+      --zapier.hook=$ZAPIER_EMAIL_HOOK
+      --email.to=$EMAIL_TARGET
+  cache: {}
+  needs: ["release-sensor:assembleRelease"]

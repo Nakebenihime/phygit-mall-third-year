@@ -1,0 +1,37 @@
+management:
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  endpoint:
+    prometheus:
+      enabled: true
+    metrics:
+      enabled: true
+server:
+  port: 8282
+
+spring:
+  rabbitmq:
+    host: 127.0.0.1
+    port: 5672
+    username: rabbitmq
+    password: rabbitmq
+    virtual-host: rabbitmq
+messaging:
+  rabbitmq:
+    messaging-exchange: messaging-exchange
+    messaging-queue: messaging-queue
+    messaging-routingkey: messaging-queue
+proxy:
+  subscriber:
+    uri: http://host.docker.internal:8383/api/v1/notifications/send/

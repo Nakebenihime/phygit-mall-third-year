@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+scrape_configs:
+  - job_name: 'springboot-docker-compose-application'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8080','host.docker.internal:8181','host.docker.internal:8282','host.docker.internal:8383','host.docker.internal:8484','host.docker.internal:8686','host.docker.internal:8888']
+  - job_name: 'springboot-qualification-application'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['192.168.0.135:8080','192.168.0.135:8181','192.168.0.135:8282','192.168.0.135:8383','192.168.0.135:8484','192.168.0.135:8686','192.168.0.135:8888']
+  - job_name: 'springboot-integration-application'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['192.168.0.130:8080','192.168.0.130:8181','192.168.0.130:8282','192.168.0.130:8383','192.168.0.135:8484','192.168.0.135:8686','192.168.0.130:8888']

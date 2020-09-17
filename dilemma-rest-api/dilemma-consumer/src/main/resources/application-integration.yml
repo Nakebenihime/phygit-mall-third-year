@@ -1,0 +1,42 @@
+management:
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  endpoint:
+    prometheus:
+      enabled: true
+    metrics:
+      enabled: true
+server:
+  port: 8282
+
+spring:
+  data:
+    mongodb:
+      host: 192.168.0.142
+      port: 27017
+      database: dilemma
+  rabbitmq:
+    host: 192.168.0.160
+    port: 5672
+    username: rabbitmq
+    password: rabbitmq
+    virtual-host: rabbitmq
+messaging:
+  rabbitmq:
+    messaging-exchange: messaging-exchange
+    messaging-queue: messaging-queue
+    messaging-routingkey: messaging-queue
+proxy:
+  subscriber:
+    uri: http://192.168.0.130:8383/api/v1/notifications/send/

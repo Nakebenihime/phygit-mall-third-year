@@ -1,0 +1,50 @@
+management:
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  endpoint:
+    prometheus:
+      enabled: true
+    metrics:
+      enabled: true
+server:
+  port: 8888
+spring:
+  data:
+    mongodb:
+      host: 192.168.0.140
+      port: 27017
+      database: dilemma
+
+documentation:
+  baseurl: http://172.31.249.11
+  swagger:
+    services:
+      - name: geolocation
+        url: ${documentation.baseurl}:8080/v2/api-docs?group=geolocation-v1
+        version: 2.0
+      - name: journey
+        url: ${documentation.baseurl}:8181/v2/api-docs?group=journey-v1
+        version: 2.0
+      - name: consumer
+        url: ${documentation.baseurl}:8282/v2/api-docs?group=consumer-proxy-v1
+        version: 2.0
+      - name: subscriber
+        url: ${documentation.baseurl}:8383/v2/api-docs?group=notification-v1
+        version: 2.0
+      - name: authentication
+        url: ${documentation.baseurl}:8484/v2/api-docs?group=authentication-v1
+        version: 2.0
+      - name: frequentation
+        url: ${documentation.baseurl}:8686/v2/api-docs?group=frequentation-v1
+        version: 2.0

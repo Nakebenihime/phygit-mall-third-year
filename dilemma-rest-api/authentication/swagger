@@ -1,0 +1,30 @@
+swagger: "2.0"
+info:
+  version: "v1"
+  title: "SwaggerAuthentication"
+  description: "Customers double authentication"
+  license:
+    name: "Apache 2.0"
+    url: "http://www.apache.org/licenses/LICENSE-2.0"
+paths:
+  /getSecretKeyForDoubleAuthentication:
+    get:
+      summary: "Start double authentication"
+      description: "Receive secret key for double authentication"
+  /login/{login}:
+    post:
+      summary: "Connection to  the account according to user's id"
+      description: "Enter login and password and get user account"
+      operationId: "getAccountAccess"
+      parameters:
+      - name: "login"
+        description: "id of the user"
+        required: true
+        type: "string"
+      responses:
+        "200":
+          description: "Successful operation"
+        "400":
+          description: "Invalid login"
+        "404":
+          description: "Account not found"

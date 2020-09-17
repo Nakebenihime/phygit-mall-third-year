@@ -1,0 +1,138 @@
+version: '3.7'
+services:
+  dilemma-geolocation:
+    hostname: dilemma-geolocation
+    deploy:
+      replicas: 1
+    image: gitlab.pds:5005/root/dilemma/dilemma-rest-api-geolocation
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "8080:8080"
+  dilemma-journey:
+    hostname: dilemma-journey
+    deploy:
+      replicas: 1
+    image: gitlab.pds:5005/root/dilemma/dilemma-rest-api-journey
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "8181:8181"
+  dilemma-consumer:
+    hostname: dilemma-consumer
+    deploy:
+      replicas: 1
+    image: gitlab.pds:5005/root/dilemma/dilemma-rest-api-consumer
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "8282:8282"
+  dilemma-subscriber:
+    hostname: dilemma-subscriber
+    deploy:
+      replicas: 1
+    image: gitlab.pds:5005/root/dilemma/dilemma-rest-api-subscriber
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "8383:8383"
+  swagger-aggregator:
+    hostname: swagger-aggregator
+    deploy:
+      replicas: 1
+    image: gitlab.pds:5005/root/dilemma/dilemma-rest-api-aggregator
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "8888:8888"
+    depends_on:
+      - dilemma-geolocation
+      - dilemma-journey
+      - dilemma-consumer
+      - dilemma-subscriber
+      - dilemma-authentication
+      - dilemma-recognition
+      - dilemma-frequentation
+  dilemma-authentication:
+    hostname: dilemma-authentication
+    deploy:
+      replicas: 1
+    image: gitlab.pds:5005/root/dilemma/dilemma-rest-api-authentication
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "8484:8484"
+  dilemma-recognition:
+    hostname: dilemma-recognition
+    deploy:
+      replicas: 1
+    image: gitlab.pds:5005/root/dilemma/dilemma-rest-api-recognition
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "8585:8585"
+    depends_on: 
+      - dilemma-consumer
+      - dilemma-subscriber
+  dilemma-frequentation:
+    hostname: dilemma-frequentation
+    deploy:
+      replicas: 1
+    image: gitlab.pds:5005/root/dilemma/dilemma-rest-api-frequentation
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "8686:8686" 
+  prometheus:
+    hostname: prometheus
+    deploy:
+      replicas: 1
+    image: prom/prometheus
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "9090:9090"
+    volumes:
+      - /home/pds/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    depends_on:
+      - dilemma-geolocation
+      - dilemma-journey
+      - dilemma-consumer
+      - dilemma-subscriber
+      - dilemma-authentication
+      - dilemma-recognition
+      - dilemma-frequentation
+      - swagger-aggregator
+  grafana:
+    hostname: grafana
+    image: grafana/grafana
+    restart_policy:
+      condition: on-failure
+      max_attempts: 3
+      window: 120s
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus

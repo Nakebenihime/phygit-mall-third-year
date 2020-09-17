@@ -1,0 +1,66 @@
+rabbitmq:
+  server: 192.168.0.160
+  port: 5672
+  credentials:
+    vhost: rabbitmq
+    username: rabbitmq
+    password: rabbitmq
+  messaging:
+    exchange: messaging-exchange
+    queue: messaging-queue
+
+parameters:
+  general:
+    output:
+      pickle:
+        embeddings: api/data/output/embeddings.pickle
+        recognizer: api/data/output/recognizer.pickle
+        label_encoder: api/data/output/le.pickle
+    input:
+      opencv:
+        prototype: api/data/facial_detection_model/deploy.prototxt
+        model: api/data/facial_detection_model/res10_300x300_ssd_iter_140000.caffemodel
+        embedding_model: api/data/facial_detection_model/openface_nn4.small2.v1.t7
+    # paths to images in dataset
+    images: api/data/images
+    # paths to videos in dataset
+    videos: api/data/videos
+    dataset: api/data/dataset
+    confidence: 0.8
+  construction:
+    blob_from_image:
+      # multiplier for image values
+      scalefactor: 1.0
+      # spatial size for output image
+      size: 300
+      # scalar with mean values which are subtracted from channels. Values are intended to be in (mean-R, mean-G, mean-B) order if image has BGR ordering and swapRB is true
+      mean:
+        r: 104.0
+        g: 177.0
+        b: 123.0
+      # flag which indicates that swap first and last channels in 3-channel image is necessary
+      swapRB: False
+      # flag which indicates whether image will be cropped after resize or not
+      crop: False
+    blob_from_face:
+      # multiplier for image values
+      scalefactor: 1.0
+      divisor: 255
+      # spatial size for output image
+      size: 96
+      # scalar with mean values which are subtracted from channels. Values are intended to be in (mean-R, mean-G, mean-B) order if image has BGR ordering and swapRB is true
+      mean:
+        r: 0
+        g: 0
+        b: 0
+      # flag which indicates that swap first and last channels in 3-channel image is necessary
+      swapRB: True
+      # flag which indicates whether image will be cropped after resize or not
+      crop: False
+  svc:
+    # regularization hyper-parameter, must be strictly positive
+    c: 1.0
+    # specifies the kernel type to be used in the algorithm. It must be one of ‘linear’, ‘poly’, ‘rbf’, ‘sigmoid’, ‘precomputed’ or a callable
+    kernel: linear
+    # whether to enable probability estimates
+    probability: True

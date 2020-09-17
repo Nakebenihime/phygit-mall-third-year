@@ -1,0 +1,27 @@
+management:
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  endpoint:
+    prometheus:
+      enabled: true
+    metrics:
+      enabled: true
+server:
+  port: 8686
+data:
+  elasticsearch:
+    host: 172.31.249.11
+    port: 9200
+    username: admin
+    password: YourPassword

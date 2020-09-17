@@ -1,0 +1,44 @@
+management:
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  endpoint:
+    prometheus:
+      enabled: true
+    metrics:
+      enabled: true
+server:
+  port: 8888
+
+documentation:
+  baseurl: http://172.31.249.11
+  swagger:
+    services:
+      - name: geolocation
+        url: ${documentation.baseurl}:3030/v2/api-docs?group=geolocation-v1
+        version: 2.0
+      - name: journey
+        url: ${documentation.baseurl}:3131/v2/api-docs?group=journey-v1
+        version: 2.0
+      - name: consumer
+        url: ${documentation.baseurl}:3232/v2/api-docs?group=consumer-proxy-v1
+        version: 2.0
+      - name: subscriber
+        url: ${documentation.baseurl}:3333/v2/api-docs?group=notification-v1
+        version: 2.0
+      - name: authentication
+        url: ${documentation.baseurl}:3434/v2/api-docs?group=authentication-v1
+        version: 2.0
+      - name: frequentation
+        url: ${documentation.baseurl}:3636/v2/api-docs?group=frequentation-v1
+        version: 2.0
